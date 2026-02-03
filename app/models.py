@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -9,8 +9,8 @@ from app.db import Base
 class Video(Base):
     __tablename__ = "videos"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    creator_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    creator_id: Mapped[str] = mapped_column(String(36), index=True)
     video_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     views_count: Mapped[int] = mapped_column(BigInteger, default=0)
     likes_count: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -28,8 +28,8 @@ class Video(Base):
 class VideoSnapshot(Base):
     __tablename__ = "video_snapshots"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id"), index=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    video_id: Mapped[str] = mapped_column(ForeignKey("videos.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

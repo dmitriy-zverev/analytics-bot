@@ -22,8 +22,8 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.create_table(
         "videos",
-        sa.Column("id", sa.BigInteger(), primary_key=True, nullable=False),
-        sa.Column("creator_id", sa.BigInteger(), nullable=False),
+        sa.Column("id", sa.String(length=36), primary_key=True, nullable=False),
+        sa.Column("creator_id", sa.String(length=36), nullable=False),
         sa.Column("video_created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("views_count", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("likes_count", sa.BigInteger(), nullable=False, server_default="0"),
@@ -42,8 +42,8 @@ def upgrade() -> None:
 
     op.create_table(
         "video_snapshots",
-        sa.Column("id", sa.BigInteger(), primary_key=True, nullable=False),
-        sa.Column("video_id", sa.BigInteger(), nullable=False),
+        sa.Column("id", sa.String(length=36), primary_key=True, nullable=False),
+        sa.Column("video_id", sa.String(length=36), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("views_count", sa.BigInteger(), nullable=False, server_default="0"),

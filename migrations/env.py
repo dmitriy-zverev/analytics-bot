@@ -3,12 +3,14 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
+load_dotenv()
 config = context.config
 database_url = os.getenv("DATABASE_URL")
 if database_url:
@@ -19,8 +21,8 @@ if database_url:
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from app.db import Base
-from app.models import Video, VideoSnapshot  # noqa: F401
+from app.db import Base  # noqa: E402
+from app.models import Video, VideoSnapshot  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
@@ -67,7 +69,7 @@ async def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    async def do_run_migrations(connection: Connection) -> None:
+    def do_run_migrations(connection: Connection) -> None:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
