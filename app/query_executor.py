@@ -25,9 +25,12 @@ class QueryExecutor:
         await self._engine.dispose()
 
     async def fetch_scalar(self, sql: str) -> QueryResult:
+        settings = get_settings()
         try:
             async with self._session_factory() as session:
-                result = await session.execute(text(sql))
+                result = await session.execute(
+                    text(sql).execution_options(timeout=settings.db_timeout)
+                )
                 value = result.scalar_one_or_none()
                 if value is None:
                     return QueryResult(value=0)

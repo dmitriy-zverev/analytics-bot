@@ -26,6 +26,7 @@ class OpenRouterClient:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
     async def generate_sql(self, user_question: str) -> LlmResponse:
+        settings = get_settings()
         prompt = build_prompt(user_question)
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -40,7 +41,9 @@ class OpenRouterClient:
             "temperature": 0.0,
         }
 
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=settings.llm_timeout
+        ) as client:
             response = await client.post("/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 import structlog
 from aiogram import Bot, Dispatcher, F
@@ -12,6 +13,9 @@ from app.query_executor import QueryExecutor, SqlExecutionError
 
 logger = structlog.get_logger()
 
+# Simple in-memory rate limiter
+_user_last_request: dict[int, datetime] = {}
+
 
 async def handle_start(message: Message) -> None:
     await message.answer(
@@ -21,6 +25,21 @@ async def handle_start(message: Message) -> None:
 
 
 async def handle_query(message: Message, llm: OpenRouterClient, executor: QueryExecutor) -> None:
+    settings = get_settings()
+    user_id = message.from_user.id if message.from_user else 0
+
+    # Rate limiting check
+    now = datetime.now()
+    if user_id in _user_last_request:
+        elapsed = (now - _user_last_request[user_id]).total_seconds()
+        if elapsed < settings.rate_limit_seconds:
+            await message.answer(
+                f"Пожалуйста, подождите {settings.rate_limit_seconds - int(elapsed)} сек."
+            )
+            return
+
+    _user_last_request[user_id] = now
+
     question = message.text or ""
     if not question.strip():
         await message.answer("Пожалуйста, отправь текстовый вопрос.")

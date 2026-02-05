@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     telegram_token: str = Field(..., alias="TELEGRAM_TOKEN")
     openrouter_api_key: str = Field(..., alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field("deepseek/deepseek-chat", alias="OPENROUTER_MODEL")
+    llm_timeout: int = Field(default=30, alias="LLM_TIMEOUT")
+    db_timeout: int = Field(default=10, alias="DB_TIMEOUT")
+    rate_limit_seconds: int = Field(default=3, alias="RATE_LIMIT_SECONDS")
 
 
 @lru_cache
