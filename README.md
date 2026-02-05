@@ -23,7 +23,7 @@ A Telegram bot that answers analytics questions about video data using natural l
 ### Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/dmitriy-zverev/analytics-bot
 cd analytics-bot
 make install
 ```
