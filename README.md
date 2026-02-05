@@ -1,171 +1,284 @@
 # Telegram Analytics Bot
 
-Async Telegram bot for video analytics on top of PostgreSQL.
+A Telegram bot that answers analytics questions about video data using natural language. The bot converts Russian questions into SQL queries using a Large Language Model (DeepSeek via OpenRouter) and executes them against PostgreSQL.
+
+## Features
+
+- Natural language queries in Russian about video statistics
+- Automatic SQL generation with multi-layer security validation
+- SELECT-only enforcement preventing data modification
+- Docker deployment with automatic migrations and data loading
+- Comprehensive test suite (33 tests)
+- Rate limiting and configurable timeouts
 
 ## Requirements
-- Python 3.11+
-- PostgreSQL
-- OpenRouter API key
-- Telegram bot token
 
-## Setup
+- Python 3.11 or higher
+- PostgreSQL 14 or higher
+- OpenRouter API account
+- Telegram Bot Token
+
+## Quick Start
+
+### Installation
+
 ```bash
+git clone <repository-url>
+cd analytics-bot
 make install
 ```
 
-Create `.env` (see `.env` template):
-```
+### Configuration
+
+Create a `.env` file in the project root:
+
+```env
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/analytics_bot
-TELEGRAM_TOKEN=your-telegram-token
-OPENROUTER_API_KEY=your-openrouter-key
+TELEGRAM_TOKEN=your-telegram-bot-token
+OPENROUTER_API_KEY=your-openrouter-api-key
 OPENROUTER_MODEL=deepseek/deepseek-chat
 ```
 
-## Migrations & Data Load
+Obtain the required tokens:
+- Telegram: Message [@BotFather](https://t.me/botfather) to create a bot
+- OpenRouter: Register at [openrouter.ai](https://openrouter.ai) to get an API key
+
+### Database Setup
+
 ```bash
+# Create the database
+createdb analytics_bot
+
+# Load sample data (automatically runs migrations)
 make load-data
 ```
-This runs Alembic migrations and loads `data/videos.json`.
 
-## LLM SQL Test
-```bash
-PYTHONPATH=. uv run python scripts/test_llm.py "Сколько всего видео есть в системе?"
-```
+### Running the Bot
 
-## End-to-end Query Test (LLM → SQL → DB)
-```bash
-PYTHONPATH=. uv run python scripts/test_query.py "Сколько всего видео есть в системе?"
-```
-
-## Run Bot
+Local development:
 ```bash
 make run-bot
 ```
 
-The bot accepts Russian questions and replies with a single numeric value.
-
-## Docker Deployment
-
-Create `.env` with your tokens:
-```
-TELEGRAM_TOKEN=your-telegram-token
-OPENROUTER_API_KEY=your-openrouter-key
-OPENROUTER_MODEL=deepseek/deepseek-chat
-```
-
-Build and run:
+Using Docker:
 ```bash
 docker-compose up -d
 ```
 
-On first startup, the bot will:
-1. Run database migrations
-2. Check if data exists
-3. Load `data/videos.json` if database is empty
-4. Start the Telegram bot
+The Docker container automatically runs migrations and loads data on first startup.
 
-View logs:
-```bash
-docker-compose logs -f bot
-```
+## Usage
 
-Stop:
-```bash
-docker-compose down
-```
+Once the bot is running, start a chat with it on Telegram and ask questions in Russian:
+
+| Question | Expected Result |
+|----------|-----------------|
+| "Сколько всего видео?" | Total number of videos |
+| "Сколько просмотров было 1 декабря?" | Total views on December 1st |
+| "Какое максимальное количество лайков?" | Maximum likes on any video |
+| "Сколько всего комментариев?" | Total comments across all videos |
 
 ## Architecture
 
-### Overview
-The bot converts Russian natural-language questions into SQL queries using an LLM, executes them against PostgreSQL, and returns numeric results.
+The data flow follows this pattern:
 
-**Flow:**
-```
-User Question (Russian) 
-  → LLM (OpenRouter/DeepSeek) 
-  → SQL Generation 
-  → Validation & Guardrails 
-  → PostgreSQL Execution 
-  → Numeric Result 
-  → Telegram Response
-```
+1. User sends a question in Russian via Telegram
+2. Bot receives the message and applies rate limiting
+3. Question is sent to OpenRouter LLM (DeepSeek) with schema context
+4. Generated SQL passes through 4-layer validation
+5. Validated SQL is executed against PostgreSQL
+6. Single numeric result is returned to the user
 
 ### Database Schema
 
-#### `videos` table (aggregate video statistics)
-- `id` (UUID) - video identifier
-- `creator_id` (UUID) - creator identifier
-- `video_created_at` (timestamptz) - when video was created
-- `views_count`, `likes_count`, `comments_count`, `reports_count` (bigint) - current totals
-- `created_at`, `updated_at` (timestamptz) - record timestamps
+**videos table** - Stores aggregate statistics per video
+- `id` (UUID, primary key)
+- `creator_id` (UUID, indexed)
+- `views_count`, `likes_count`, `comments_count`, `reports_count` (BIGINT)
+- `video_created_at`, `created_at`, `updated_at` (TIMESTAMPTZ)
 
-#### `video_snapshots` table (hourly measurements)
-- `id` (UUID) - snapshot identifier
-- `video_id` (UUID, FK) - references videos.id
-- `created_at` (timestamptz) - snapshot timestamp
-- `views_count`, `likes_count`, `comments_count`, `reports_count` (bigint) - snapshot values
-- `delta_views_count`, `delta_likes_count`, `delta_comments_count`, `delta_reports_count` (bigint) - changes since last snapshot
+**video_snapshots table** - Hourly measurements for trend analysis
+- `id` (UUID, primary key)
+- `video_id` (UUID, foreign key to videos.id)
+- `views_count`, `likes_count`, `comments_count`, `reports_count` (BIGINT)
+- `delta_views_count`, `delta_likes_count`, `delta_comments_count`, `delta_reports_count` (BIGINT) - change since previous snapshot
+- `created_at` (TIMESTAMPTZ, indexed)
 
-**Use cases:**
-- Total video count: query `videos` table
-- Growth on specific day: query `video_snapshots` with `delta_*` fields filtered by date
+The delta columns enable efficient daily growth calculations without joining multiple rows.
 
-### LLM Prompt Engineering
+## Testing
 
-**System prompt** (`app/prompt.py`):
-- Describes both tables with all fields and types
-- Specifies strict rules for SQL generation
-- Enforces single numeric output (COUNT/SUM/AVG/MIN/MAX)
-- Requires aggregate functions only
-- Allows only SELECT queries
-- Permits JOIN only on `video_snapshots.video_id = videos.id`
+Run the test suite:
 
-**Key rules:**
-1. Return ONLY SQL (no explanations)
-2. Must use aggregate function (COUNT/SUM/AVG/MIN/MAX)
-3. Single numeric result
-4. No ID columns in output
-5. Use `delta_*` for daily growth calculations
+```bash
+# Unit tests only (fast, no external API calls)
+make test
 
-**Example prompts:**
-- "Сколько всего видео?" → `SELECT COUNT(*) FROM videos`
-- "Сколько просмотров набрали видео 1 декабря?" → `SELECT SUM(delta_views_count) FROM video_snapshots WHERE DATE(created_at) = '2025-12-01'`
+# With coverage report
+PYTHONPATH=. uv run pytest tests/ -v --cov=app
 
-### SQL Guardrails
+# Integration tests (requires API key and database)
+export $(cat .env | grep -v '^#' | xargs)
+PYTHONPATH=. uv run pytest tests/test_llm_integration.py -v
+```
 
-**Validation layers** (`app/sql_guard.py`):
+Test coverage includes:
+- SQL guardrail validation
+- Prompt template structure
+- LLM SQL generation
+- End-to-end query execution
+- Error handling for edge cases
 
-1. **Extraction**: Strip markdown code fences and extract first SELECT
-2. **SELECT-only check**: Reject if doesn't start with SELECT
-3. **Forbidden keywords**: Block INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/CREATE
-4. **Aggregate requirement**: Ensure COUNT/SUM/AVG/MIN/MAX present
+## Security
 
-**Execution safety** (`app/query_executor.py`):
-- Enforce numeric result type (int/float)
-- Return 0 if NULL
-- Raise custom error if non-numeric
+### SQL Injection Protection
 
-### LLM Integration
+The system implements a 4-layer validation approach:
 
-**Provider**: OpenRouter API  
-**Model**: DeepSeek Chat (configurable)  
-**Temperature**: 0.0 (deterministic)  
-**Retries**: 3 attempts with exponential backoff
+1. **Extraction**: Parse SQL from markdown code fences or surrounding text
+2. **SELECT-only**: Verify query starts with SELECT statement
+3. **Forbidden Keywords**: Block INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT, REVOKE
+4. **Aggregate Requirement**: Ensure presence of COUNT, SUM, AVG, MIN, or MAX functions
 
-**Error handling:**
-- Invalid LLM response → `SqlGenerationError`
-- SQL validation failure → `SqlGenerationError`
-- Execution error → `SqlExecutionError`
-- User sees: "Ошибка обработки запроса. Попробуйте переформулировать."
+All validation failures raise `SqlValidationError` and return a generic error message to the user.
 
-### Components
+### Rate Limiting
 
-- `app/main.py` - Telegram bot entrypoint (aiogram)
-- `app/llm.py` - OpenRouter client with retries
-- `app/prompt.py` - LLM prompt template
-- `app/sql_guard.py` - SQL validation and sanitization
-- `app/query_executor.py` - Async PostgreSQL execution
-- `app/models.py` - SQLAlchemy ORM models
-- `app/config.py` - Pydantic settings
-- `scripts/load_data.py` - JSON data loader
-- `scripts/entrypoint.sh` - Docker startup script
+Per-user rate limiting prevents API abuse. Default is 3 seconds between requests from the same user. Configure via `RATE_LIMIT_SECONDS` environment variable.
+
+### Error Handling
+
+Users receive generic error messages:
+> "Ошибка обработки запроса. Попробуйте переформулировать."
+
+Detailed error information is logged server-side with structured logging.
+
+## Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | - | PostgreSQL async connection string |
+| `TELEGRAM_TOKEN` | Yes | - | Bot token from @BotFather |
+| `OPENROUTER_API_KEY` | Yes | - | OpenRouter API authentication key |
+| `OPENROUTER_MODEL` | No | deepseek/deepseek-chat | LLM model identifier |
+| `LLM_TIMEOUT` | No | 30 | Maximum wait time for LLM response (seconds) |
+| `DB_TIMEOUT` | No | 10 | Maximum wait time for database query (seconds) |
+| `RATE_LIMIT_SECONDS` | No | 3 | Minimum seconds between user requests |
+
+## Project Structure
+
+```
+analytics-bot/
+├── app/                      # Application code
+│   ├── main.py              # Telegram bot entrypoint
+│   ├── config.py            # Pydantic settings
+│   ├── db.py                # Database connection management
+│   ├── models.py            # SQLAlchemy ORM models
+│   ├── llm.py               # OpenRouter client with retries
+│   ├── prompt.py            # LLM prompt templates
+│   ├── sql_guard.py         # SQL validation layer
+│   └── query_executor.py    # SQL execution with safety checks
+├── migrations/              # Alembic database migrations
+├── scripts/                 # Utility scripts
+│   ├── load_data.py         # JSON data loader
+│   ├── test_llm.py          # Standalone LLM test
+│   ├── test_query.py        # End-to-end test
+│   └── entrypoint.sh        # Docker startup script
+├── tests/                   # Test suite
+│   ├── test_prompt.py       # Prompt validation tests
+│   ├── test_sql_guard.py    # SQL guardrail tests
+│   └── test_llm_integration.py  # Integration tests
+├── data/                    # Sample data
+│   └── videos.json
+├── docker-compose.yml       # Docker orchestration
+├── Dockerfile               # Bot container image
+├── Makefile                 # Development commands
+└── README.md                # This file
+```
+
+## Docker Deployment
+
+The docker-compose configuration includes two services:
+
+- **postgres**: PostgreSQL 16 with persistent volume
+- **bot**: Python application with automatic migrations
+
+Commands:
+```bash
+# Build and start services
+docker-compose up -d
+
+# View bot logs
+docker-compose logs -f bot
+
+# Stop all services
+docker-compose down
+
+# Restart bot only
+docker-compose restart bot
+```
+
+On first startup, the bot container:
+1. Waits for PostgreSQL to be healthy
+2. Runs Alembic migrations
+3. Loads data/videos.json if the videos table is empty
+4. Starts the Telegram bot
+
+## Development
+
+### Code Quality
+
+The project uses:
+- **ruff**: Fast Python linter
+- **mypy**: Static type checking (strict mode)
+- **pytest**: Testing framework with asyncio support
+
+Run quality checks:
+```bash
+make lint        # Run ruff
+make typecheck   # Run mypy
+make format      # Auto-format code
+```
+
+### Adding Features
+
+To extend the bot with new query types:
+
+1. Update `app/prompt.py` with new schema documentation if needed
+2. Add example queries to the prompt template
+3. Write tests in `tests/test_llm_integration.py`
+4. Update this README with new usage examples
+
+## Troubleshooting
+
+### Bot not responding
+- Verify `TELEGRAM_TOKEN` is correct
+- Check bot is running: `docker-compose ps`
+- View logs: `docker-compose logs -f bot`
+
+### SQL errors
+- Enable debug logging to see generated SQL
+- Check database connection string
+- Verify migrations ran: `uv run alembic current`
+
+### LLM not generating valid SQL
+- Check `OPENROUTER_API_KEY` is valid
+- Verify model name is correct
+- Review rate limits on OpenRouter dashboard
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions are welcome. Please:
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## Support
+
+For bug reports and feature requests, please use GitHub Issues.

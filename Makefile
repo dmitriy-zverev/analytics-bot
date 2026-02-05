@@ -35,7 +35,7 @@ typecheck:
 	uv run mypy app
 
 test:
-	uv run pytest
+	PYTHONPATH=. uv run pytest
 
 pre-commit-install: install-dev
 	uv run pre-commit install
