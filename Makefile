@@ -57,7 +57,7 @@ load-data: upgrade
 	PYTHONPATH=. uv run python scripts/load_data.py
 
 run-bot:
-	uv run python app/main.py
+	PYTHONPATH=. uv run python app/main.py
 
 docker-build:
 	docker build -t analytics-bot:latest .
